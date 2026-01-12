@@ -42,6 +42,8 @@ app.get('/webhook', (req, res) => {
 // ==========================================
 app.post('/webhook', async (req, res) => {
     const body = req.body;
+    console.log("Incoming Webhook:", JSON.stringify(body, null, 2)); // <--- NEW DEBUG LOG
+
 
     // ตรวจสอบว่าเป็น event จาก page หรือไม่
     if (body.object === 'page') {
