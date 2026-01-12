@@ -12,7 +12,7 @@ app.use(express.json());
 
 // Main Route
 app.get('/', (req, res) => {
-    res.send('Sheet Chat Bot API (FB Compatible) is running');
+    res.send('VERSION 2: READY - Server is Online! 🚀');
 });
 
 // ==========================================
