@@ -48,8 +48,10 @@ app.get('/webhook', (req, res) => {
 // ==========================================
 app.post('/webhook', async (req, res) => {
     const body = req.body;
-    console.log("Incoming Webhook:", JSON.stringify(body, null, 2)); // <--- NEW DEBUG LOG
-
+    console.log("========================================");
+    console.log("DEBUG: POST /webhook hit!");
+    console.log("DEBUG: Body:", JSON.stringify(body, null, 2));
+    console.log("========================================");
 
     // ตรวจสอบว่าเป็น event จาก page หรือไม่
     if (body.object === 'page') {
@@ -113,4 +115,5 @@ app.post('/api/chat', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
+    console.log("DEBUG MODE: WAITING FOR WEBHOOKS... (Please check logs on Render)");
 });
