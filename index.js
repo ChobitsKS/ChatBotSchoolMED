@@ -48,6 +48,8 @@ app.get('/webhook', (req, res) => {
 // ==========================================
 // In-memory stickiness (USER_ID -> TIMESTAMP when to resume)
 const pausedUsers = new Map();
+// In-memory timers (USER_ID -> TIMEOUT OBJECT)
+const activeTimers = new Map();
 
 // ==========================================
 // 2. Webhook Event Handling (เวลามีคนพิมพ์ข้อความมา)
@@ -76,11 +78,17 @@ app.post('/webhook', async (req, res) => {
                 const resumeTime = pausedUsers.get(sender_psid);
                 const isPaused = resumeTime && Date.now() < resumeTime;
 
-                // Keywords to RESUME bot
+                // Keywords to RESUME bot (Manual Resume)
                 if (received_text === "จบการสนทนา" || received_text === "จบบทสนทนา") {
                     pausedUsers.delete(sender_psid);
+                    // Clear pending timer if exists
+                    if (activeTimers.has(sender_psid)) {
+                        clearTimeout(activeTimers.get(sender_psid));
+                        activeTimers.delete(sender_psid);
+                    }
+
                     sendMessage(sender_psid, "ระบบอัตโนมัติกลับมาทำงานแล้วครับ (ถ้ามีอะไรให้ช่วย พิมพ์ถามได้เลยนะครับ)");
-                    continue; // Skip the rest, handled here
+                    continue;
                 }
 
                 // If Paused: Do NOTHING (let human answer) except logging
@@ -91,10 +99,23 @@ app.post('/webhook', async (req, res) => {
 
                 // Keywords to PAUSE bot
                 if (received_text === "ติดต่อเจ้าหน้าที่" || received_text === "ติดต่อคน") {
-                    // Set pause for 30 minutes
+                    // 1. Set pause state (Stickiness)
                     const timeoutMinutes = 30;
                     const resumeTimestamp = Date.now() + (timeoutMinutes * 60 * 1000);
                     pausedUsers.set(sender_psid, resumeTimestamp);
+
+                    // 2. Schedule Auto-Resume Notification
+                    // Clear old timer if any
+                    if (activeTimers.has(sender_psid)) clearTimeout(activeTimers.get(sender_psid));
+
+                    const timerId = setTimeout(() => {
+                        console.log(`[AUTO-RESUME] Timeout expired for ${sender_psid}`);
+                        pausedUsers.delete(sender_psid);
+                        activeTimers.delete(sender_psid);
+                        sendMessage(sender_psid, "⏳ ครบ 30 นาทีแล้วครับ ระบบอัตโนมัติกลับมาดูแลคุณต่อแล้วนะ! (สงสัยอะไรถามต่อได้เลยครับ)");
+                    }, timeoutMinutes * 60 * 1000);
+
+                    activeTimers.set(sender_psid, timerId);
 
                     sendMessage(sender_psid, `รับทราบครับ! บอทจะหยุดทำงาน 30 นาทีเพื่อให้เจ้าหน้าที่มาตอบนะครับ\n\n(ถ้าคุยเสร็จแล้ว พิมพ์คำว่า "จบการสนทนา" เพื่อเรียกบอทกลับมาได้ทันทีครับ)`);
                     continue;
