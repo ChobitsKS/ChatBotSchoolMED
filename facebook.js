@@ -27,7 +27,7 @@ function sendMessage(recipientId, messageText) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Content-Length': jsonData.length
+            'Content-Length': Buffer.byteLength(jsonData)
         }
     };
 
