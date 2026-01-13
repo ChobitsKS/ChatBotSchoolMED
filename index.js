@@ -46,35 +46,71 @@ app.get('/webhook', (req, res) => {
 // ==========================================
 // 2. Webhook Event Handling (เวลามีคนพิมพ์ข้อความมา)
 // ==========================================
+// In-memory stickiness (USER_ID -> TIMESTAMP when to resume)
+const pausedUsers = new Map();
+
+// ==========================================
+// 2. Webhook Event Handling (เวลามีคนพิมพ์ข้อความมา)
+// ==========================================
 app.post('/webhook', async (req, res) => {
     const body = req.body;
     console.log("========================================");
     console.log("DEBUG: POST /webhook hit!");
-    console.log("DEBUG: Body:", JSON.stringify(body, null, 2));
+    // console.log("DEBUG: Body:", JSON.stringify(body, null, 2)); // Reduce noise
     console.log("========================================");
 
-    // ตรวจสอบว่าเป็น event จาก page หรือไม่
     if (body.object === 'page') {
-        res.status(200).send('EVENT_RECEIVED'); // ตอบกลับ FB ทันทีว่าได้รับแล้ว (สำคัญ!)
+        res.status(200).send('EVENT_RECEIVED');
 
-        // วนลูปทุก entry (เผื่อมาหลายข้อความพร้อมกัน)
         for (const entry of body.entry) {
-            // ส่วนของข้อความ (messaging)
             const webhook_event = entry.messaging ? entry.messaging[0] : null;
 
             if (webhook_event && webhook_event.message && webhook_event.message.text) {
                 const sender_psid = webhook_event.sender.id;
-                const received_text = webhook_event.message.text;
+                const received_text = webhook_event.message.text.trim(); // Trim whitespace
                 console.log(`Received message from ${sender_psid}: ${received_text}`);
 
+                // ---------------------------------------------------------
+                // 1. CHECK PAUSE STATE (โหมดคุยกับคน)
+                // ---------------------------------------------------------
+                const resumeTime = pausedUsers.get(sender_psid);
+                const isPaused = resumeTime && Date.now() < resumeTime;
+
+                // Keywords to RESUME bot
+                if (received_text === "จบการสนทนา" || received_text === "จบบทสนทนา") {
+                    pausedUsers.delete(sender_psid);
+                    sendMessage(sender_psid, "ระบบอัตโนมัติกลับมาทำงานแล้วครับ (ถ้ามีอะไรให้ช่วย พิมพ์ถามได้เลยนะครับ)");
+                    continue; // Skip the rest, handled here
+                }
+
+                // If Paused: Do NOTHING (let human answer) except logging
+                if (isPaused) {
+                    console.log(`[PAUSED] User ${sender_psid} is talking to human. Ignoring message.`);
+                    continue;
+                }
+
+                // Keywords to PAUSE bot
+                if (received_text === "ติดต่อเจ้าหน้าที่" || received_text === "ติดต่อคน") {
+                    // Set pause for 30 minutes
+                    const timeoutMinutes = 30;
+                    const resumeTimestamp = Date.now() + (timeoutMinutes * 60 * 1000);
+                    pausedUsers.set(sender_psid, resumeTimestamp);
+
+                    sendMessage(sender_psid, `รับทราบครับ! บอทจะหยุดทำงาน 30 นาทีเพื่อให้เจ้าหน้าที่มาตอบนะครับ\n\n(ถ้าคุยเสร็จแล้ว พิมพ์คำว่า "จบการสนทนา" เพื่อเรียกบอทกลับมาได้ทันทีครับ)`);
+                    continue;
+                }
+
+                // ---------------------------------------------------------
+                // 2. NORMAL BOT LOGIC (Go to Sheet)
+                // ---------------------------------------------------------
                 try {
-                    // 1. ค้นหาคำตอบใน Google Sheet
                     const answer = await findAnswerInSheet(received_text);
 
-                    // 2. ถ้าเจอ ให้ตอบคำตอบ ถ้าไม่เจอ ให้ตอบ default
-                    const replyText = answer || "ขอโทษครับ ผมไม่พบข้อมูลเรื่องนี้ในฐานข้อมูล (ลองถามเรื่องอื่น เช่น ค่าเทอม, ติดต่อ)";
+                    // Fallback Message with Instruction
+                    const defaultReply = "ขอโทษครับ ผมไม่พบข้อมูลเรื่องนี้ในฐานข้อมูล\n\n(ลองถามเรื่องอื่น หรือพิมพ์ว่า 'ติดต่อเจ้าหน้าที่' เพื่อคุยกับคนได้เลยครับ)";
 
-                    // 3. ส่งข้อความกลับไปหาผู้ใช้ผ่าน FB API
+                    const replyText = answer || defaultReply;
+
                     console.log(`Replying: ${replyText}`);
                     sendMessage(sender_psid, replyText);
 
@@ -104,7 +140,7 @@ app.post('/api/chat', async (req, res) => {
         if (answer) {
             res.json({ response: answer });
         } else {
-            res.json({ response: "ขอโทษครับ ผมไม่พบข้อมูลเกี่ยวกับเรื่องนี้ในฐานข้อมูล" }); // "Sorry, I couldn't find matches"
+            res.json({ response: "ขอโทษครับ ผมไม่พบข้อมูลเกี่ยวกับเรื่องนี้ในฐานข้อมูล" });
         }
 
     } catch (error) {
